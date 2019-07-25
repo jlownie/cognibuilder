@@ -3,6 +3,9 @@ import tkinter
 from tkinter import *
 import tkinter.ttk
 from tkinter.ttk import *
+from enum import Enum, auto
+import random
+from random import randint
 
 # Midi import
 import rtmidi
@@ -11,50 +14,93 @@ import rtmidi
 import time
 import threading
 
-# Global vars
+class NoteQuestion():
+	NOTENAMES_SHARPS=('A','A#', 'B', 'C','C#', 'D','D#', 'E', 'F','F#', 'G','G#' )
+	NOTENAMES_FLATS=('A', 'Bb', 'B', 'C', 'Db','D', 'Eb', 'E', 'F', 'Gb', 'G', 'Ab' )
+	SHARPS=auto()
+	FLATS=auto()
 
-# Constants
-NOTENAMES_SHARPS=('A','A#', 'B', 'C','C#', 'D','D#', 'E', 'F','F#', 'G','G#' )
-NOTENAMES_FLATS=('A','Ab', 'B', 'Bb', 'C', 'D','Db', 'E', 'Eb', 'F', 'G','Gb' )
-
-# MIDI potocol constants
-TYPE_BITMASK=0b10000000
-CHANNEL_BITMASK=0b00001111
-MESSAGE_BITMASK=0b01110000
-
-# Helper class for asking questions
-class QuestionFindNote:
+# Ask for a note by name - any octave
+class QuestionNoteByName(NoteQuestion):
 	questionText=None
 	answer=None
+	accidentalType=None
+	noteNames=None
 	
 	def __init__(self):
-		pass
+		self.answer=randint(1, 12)
+		logMsg('question init: Answer is ' + str(self.answer))
+		sharpOrFlat=randint(1, 2)
+		if(sharpOrFlat==1):
+			self.accidentalType=self.SHARPS
+			self.noteNames=self.NOTENAMES_SHARPS
+		else:
+			self.accidentalType=self.FLATS
+			self.noteNames=self.NOTENAMES_FLATS
+		self.questionText='Find the note ' + self.noteNames[self.answer - 1]
+
+# MIDI protocol constants
+class MIDI_BITMASK():
+	BYTE_TYPE=0b10000000
+	CHANNEL=0b00001111
+	MESSAGE=0b01110000
+	NOTE_ON=0b00010000
+	NOTE_OFF=0b00000000
+
+class MIDI_MESSAGE_TYPE(Enum):
+	NOTE_ON=auto()
+	NOTE_OFF=auto()
 
 # A wrapper for MIDI notes
 class MIDINote:
-	noteNumber=None # 1 is A, 11 is G#
+	keyNumber=None # A0=21, A1=33, etc, 108=C8
+	channel=None # 0-15
+	messageType=None
+	messageTypeString=None
 	
-	# Notemessage structure is ([144, 55, 91], 0.0)
+	# Example notemessage is ([144, 55, 91], 0.0)
 	def __init__(self, noteMessage=None):
 		if(noteMessage):
 			statusByte=noteMessage[0][0]
-			logMsg('statusByte is: ' + str(statusByte))
-			if(self.isStatusByte(statusByte)):
-				logMsg('This is a status byte')
-			else:
-				logMsg('This is not a status byte')
+			if(noteMessage[0][1]):
+				firstDataByte=noteMessage[0][1]
+			if(noteMessage[0][2]):
+				secondDataByte=noteMessage[0][2]
+
+			# Decode the message			
+			self.channel=self.getChannel(statusByte)
+			thisMessageType=self.getMessageType(statusByte)
+			if(thisMessageType - MIDI_BITMASK.NOTE_ON == 0):
+				self.messageType=MIDI_MESSAGE_TYPE.NOTE_ON
+				self.messageTypeString='Note on'
+				self.keyNumber=firstDataByte
+			elif(thisMessageType - MIDI_BITMASK.NOTE_OFF == 0):
+				self.messageType=MIDI_MESSAGE_TYPE.NOTE_OFF
+				self.messageTypeString='Note off'
+				self.keyNumber=firstDataByte
 	
 	def isStatusByte(self, byte):
-		typePayload=byte & TYPE_BITMASK
+		typePayload=byte & MIDI_BITMASK.BYTE_TYPE
 		if(typePayload == 0b10000000):
 			return True
 		return False
+
+	def getChannel(self, byte):
+		channelPayload=byte & MIDI_BITMASK.CHANNEL
+		return channelPayload
+
+	def getMessageType(self, byte):
+		typePayload=byte & MIDI_BITMASK.MESSAGE
+		return typePayload
 
 # The GUI class
 class Application(Frame):
     def showMessage(self, message):
         self.outputBox["text"] = message
 
+    def quitApp(self):
+        self.quit()
+		
     def createWidgets(self):
         self.outputBox = Label(self)
         self.outputBox["text"] = "Output goes here"
@@ -62,7 +108,7 @@ class Application(Frame):
         
         self.QUIT = Button(self)
         self.QUIT["text"] = "QUIT"
-        self.QUIT["command"] =  self.quit
+        self.QUIT["command"] = self.quitApp
 
         self.QUIT.pack({"side": "bottom"})
 
@@ -74,32 +120,56 @@ class Application(Frame):
 def logMsg(message):
 	print(message)
 
-def getQuestion():
-	newQuestion=QuestionFindNote()
-	newQuestion.questionText='Find the note D'
-	newQuestion.answer=6
-	return newQuestion
+def getQuestion():	
+	return QuestionNoteByName()
 
-def listenForMIDI(midiIn, guiWindow):
+# This method gets called by a thread that runs independently of the GUI
+def mainLoop(midiIn, guiWindow):
 	global keepThreadGoing
 
-	# Keep asking questions until exit
+	# Loop until the quit button is pressed
 	while(keepThreadGoing):
+		# Display the question
 		thisQuestion=getQuestion()
-		
-		# Keep waiting for a MIDI note
-		while(keepThreadGoing):
-			msg = midiIn.get_message()
-			if msg:
-				note=MIDINote(msg)
-				noteArrived(note, guiWindow)
+		guiWindow.showMessage(thisQuestion.questionText)
+
+		note=waitForNoteOn(midiIn)
+		if note:
+			# Give feedback
+			noteArrived(note, guiWindow, thisQuestion) 
+			
+			# Wait for a keypress
+			waitForNoteOn(midiIn)
+
+def waitForNoteOn(midiIn):
+	global keepThreadGoing
+	note=None
+
+	# Wait for a note-on event
+	gotNoteOn=False
+	while(not gotNoteOn and keepThreadGoing):
+		msg = midiIn.get_message()
+		while(not msg and keepThreadGoing):
 			time.sleep(0.3)
+			msg = midiIn.get_message()
+		if(msg):
+			note=MIDINote(msg)
+			if(note.messageType == MIDI_MESSAGE_TYPE.NOTE_ON):
+				gotNoteOn=True
+	return note
 	
-def noteArrived(note, guiWindow):
-	fullMessage = 'Note arrived. Pitch: ' + str(note.noteNumber)
-	print(fullMessage)
-	guiWindow.showMessage(fullMessage)
-	#print("[%s] @%0.6f %r" % (port_name, timer, message))
+def noteArrived(note, guiWindow, thisQuestion):
+	# Convert the note to a number from 1-12
+	answer=(note.keyNumber - 21)%12+1
+	logMsg('noteArrived: Answer is ' + str(answer))
+	logMsg('noteArrived: Correct answer is ' + str(thisQuestion.answer))
+	# Compare with correct answer and give feedback
+	if(answer==thisQuestion.answer):
+		guiWindow.showMessage('Congratulations! You pressed the correct key\n\nPress any note to continue')
+	else:
+		wrongAnswer=thisQuestion.noteNames[answer-1] # The index of the first array element is 0 but the first note is 1
+		rightAnswer=thisQuestion.noteNames[thisQuestion.answer-1]
+		guiWindow.showMessage(f'The correct key was {rightAnswer}, the key you pressed was {wrongAnswer}\n\nPress any note to continue')
 
 def initMidi():
 	try:
@@ -107,18 +177,19 @@ def initMidi():
 		midiIn.open_port(0)
 		port_name=midiIn.get_port_name(0)
 	except (EOFError, KeyboardInterrupt):
-		print('Failed to open port')
+		logMsg('Failed to open port')
 		quit()
-	print('Opened port successfully')
+	logMsg('Opened port successfully')
 	return midiIn
 
 # Set up the GUI
 root = Tk()
 app = Application(master=root)
 
-# Set up the MIDI listener
+# Set up the thread that responds to input
 midiIn = initMidi()
-midiListenerThread = threading.Thread(target=listenForMIDI, args=(midiIn,app))
+midiListenerThread = threading.Thread(target=mainLoop, args=(midiIn,app))
+global keepThreadGoing
 keepThreadGoing=True
 midiListenerThread.start()
 
