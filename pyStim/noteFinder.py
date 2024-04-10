@@ -104,10 +104,12 @@ class Application(Frame):
     def createWidgets(self):
         self.outputBox = Label(self)
         self.outputBox["text"] = "Output goes here"
+        self.outputBox["style"] = "QuestionerText"
         self.outputBox.pack({"side": "top"})
         
         self.QUIT = Button(self)
         self.QUIT["text"] = "QUIT"
+        self.QUIT["style"] = "QuestionerText"
         self.QUIT["command"] = self.quitApp
 
         self.QUIT.pack({"side": "bottom"})
@@ -181,6 +183,11 @@ def initMidi():
 		quit()
 	logMsg('Opened port successfully')
 	return midiIn
+
+# Define styles
+style = Style()
+#style.configure("QuestionerText", size=12)
+style.configure("QuestionerText")
 
 # Set up the GUI
 root = Tk()
