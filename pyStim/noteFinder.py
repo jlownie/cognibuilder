@@ -103,25 +103,27 @@ class Application(Frame):
 		
 	# Initialise the main GUI window
     def __init__(self, master=None, ):
-        pass
-        #super().__init__(root, padding="3 3 12 12")
+        root = Tk()
+        self.root = root
+        root.title("CogniBuilder")
+        super().__init__(root, padding="3 3 12 12")
 
         #mainframe = Frame(root, padding="3 3 12 12")
-        # self.grid(column=0, row=0, sticky=(N, W, E, S))
-        # root.columnconfigure(0, weight=1)
-        # root.rowconfigure(0, weight=1)
+        self.grid(column=0, row=0, sticky=(N, W, E, S))
+        root.columnconfigure(0, weight=1)
+        root.rowconfigure(0, weight=1)
 
-		# # Add widgets to it
-        # self.outputBox = Label(self)
-        # self.outputBox["text"] = "Output goes here"
-        # #self.outputBox["style"] = "QuestionerText"
-        # self.outputBox.grid(column=1, row=1, sticky=(W, E))
+		# Add widgets to it
+        self.outputBox = Label(self)
+        self.outputBox["text"] = "Output goes here"
+        #self.outputBox["style"] = "QuestionerText"
+        self.outputBox.grid(column=1, row=1, sticky=(W, E))
         
-        # self.QUIT = Button(self)
-        # self.QUIT["text"] = "QUIT"
-        # #self.QUIT["style"] = "QuestionerText"
-        # self.QUIT["command"] = self.quitApp
-        # self.QUIT.grid(column=1, row=2, sticky=(W, E))
+        self.QUIT = Button(self)
+        self.QUIT["text"] = "QUIT"
+        #self.QUIT["style"] = "QuestionerText"
+        self.QUIT["command"] = self.quitApp
+        self.QUIT.grid(column=1, row=2, sticky=(W, E))
 
 def logMsg(message):
 	print(message)
@@ -203,25 +205,7 @@ style = Style()
 #style.configure("QuestionerText")
 
 # Set up the GUI
-root = Tk()
-root.title("CogniBuilder")
-app = Application(master=root)
-app.grid(column=0, row=0, sticky=(N, W, E, S))
-app.columnconfigure(0, weight=1)
-app.rowconfigure(0, weight=1)
-
-# Add widgets to it
-app.outputBox = Label(app)
-app.outputBox["text"] = "Output goes here"
-#self.outputBox["style"] = "QuestionerText"
-app.outputBox.grid(column=1, row=1, sticky=(W, E))
-
-app.QUIT = Button(app)
-app.QUIT["text"] = "QUIT"
-#self.QUIT["style"] = "QuestionerText"
-app.QUIT["command"] = app.quitApp
-app.QUIT.grid(column=1, row=2, sticky=(W, E))
-
+app = Application()
 
 # Set up the thread that responds to input
 midiIn = initMidi()
@@ -230,5 +214,5 @@ global keepThreadGoing
 keepThreadGoing=True
 midiListenerThread.start()
 
-root.mainloop()
+app.root.mainloop()
 keepThreadGoing=False
