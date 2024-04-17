@@ -1,3 +1,3 @@
 .vscode/launch.json
-gui/__pycache__/tkinter.cpython-311.pyc
+*.pyc
 .vscode/cognibuilder.code-workspace
